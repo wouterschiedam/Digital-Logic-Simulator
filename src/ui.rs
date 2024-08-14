@@ -7,8 +7,9 @@ use iced::{
 };
 
 use crate::{
-    gates::{GateType, LogicGate, LogicGateApp},
+    gates::{GateType, LogicGate},
     serialize_point::SerializablePoint,
+    LGapp::LogicGateApp,
 };
 
 #[derive(Debug, Clone)]
@@ -17,6 +18,7 @@ pub enum Message {
     Load,
     AddInputNode(Point),
     AddOutputNode(Point, Rectangle),
+    AddGate(GateType),
 }
 
 pub fn run() -> iced::Result {
@@ -37,15 +39,17 @@ impl Application for LogicGateApp {
 
     fn new(_flags: Self::Flags) -> (Self, Command<Message>) {
         let initial_gate = LogicGate {
-            gate_type: GateType::Input,
+            gate_type: GateType::And,
             position: SerializablePoint { x: 25.0, y: 100.0 },
             inputs: Vec::new(),
             outputs: Vec::new(),
+            input_nodes: Vec::new(),
+            output_nodes: Vec::new(),
         };
 
         (
             Self {
-                gates: vec![initial_gate].into(), // Initialize with one gate
+                gates: RefCell::new(vec![initial_gate]),
                 connections: RefCell::new(Vec::new()),
                 current_drag_position: RefCell::new(None),
                 current_dragging_line: RefCell::new(None),
@@ -95,6 +99,7 @@ impl Application for LogicGateApp {
                     gate.add_output_node(cursor_point, bounds);
                 }
             }
+            Message::AddGate(gate) => self.add_gate(gate, SerializablePoint { x: 50.0, y: 50.0 }),
         }
         Command::none()
     }
@@ -102,11 +107,13 @@ impl Application for LogicGateApp {
     fn view(&self) -> Element<Message> {
         let save_button = Button::new(Text::new("Save")).on_press(Message::Save);
         let load_button = Button::new(Text::new("Load")).on_press(Message::Load);
+        let and_gate = Button::new(Text::new("And gate")).on_press(Message::AddGate(GateType::And));
 
         Column::new()
             .push(Canvas::new(self).width(Length::Fill).height(Length::Fill))
             .push(save_button)
             .push(load_button)
+            .push(and_gate)
             .into()
     }
 

@@ -1,5 +1,6 @@
 use ui::run;
 
+mod LGapp;
 mod gates;
 mod helpers;
 mod linepath;
