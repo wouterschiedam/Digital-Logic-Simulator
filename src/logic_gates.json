@@ -1,0 +1,39 @@
+{
+  "gates": [
+    {
+      "gate_type": "Input",
+      "position": {
+        "x": 25.0,
+        "y": 100.0
+      },
+      "inputs": [
+        {
+          "position": {
+            "x": 25.0,
+            "y": 381.21094
+          },
+          "state": false,
+          "connected_to": null,
+          "node_type": "Input"
+        }
+      ],
+      "outputs": [
+        {
+          "position": {
+            "x": 1415.0,
+            "y": 400.10547
+          },
+          "state": false,
+          "connected_to": null,
+          "node_type": "Output"
+        }
+      ]
+    }
+  ],
+  "connections": [],
+  "dragging_node": null,
+  "drag_start": null,
+  "current_drag_position": null,
+  "current_dragging_line": null,
+  "is_dragging": false
+}
