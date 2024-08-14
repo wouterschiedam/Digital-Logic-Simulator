@@ -2,12 +2,14 @@ use std::cell::{Cell, RefCell};
 
 use iced::{
     executor,
-    widget::{Button, Canvas, Column, Text},
-    Application, Command, Element, Length, Point, Rectangle, Settings, Size, Theme,
+    widget::{row, Button, Canvas, Column, Text},
+    Alignment, Application, Command, Element, Length, Point, Rectangle, Settings, Size, Theme,
 };
 
 use crate::{
     gates::{GateType, LogicGate},
+    helpers::NODE_RADIUS,
+    nodes::{Node, NodeType, Nodes},
     serialize_point::SerializablePoint,
     LGapp::LogicGateApp,
 };
@@ -18,7 +20,7 @@ pub enum Message {
     Load,
     AddInputNode(Point),
     AddOutputNode(Point, Rectangle),
-    AddGate(GateType),
+    AddGate(GateType, usize, usize),
 }
 
 pub fn run() -> iced::Result {
@@ -38,24 +40,22 @@ impl Application for LogicGateApp {
     type Flags = ();
 
     fn new(_flags: Self::Flags) -> (Self, Command<Message>) {
-        let initial_gate = LogicGate {
-            gate_type: GateType::And,
-            position: SerializablePoint { x: 25.0, y: 100.0 },
-            inputs: Vec::new(),
-            outputs: Vec::new(),
+        let initial_node = Nodes {
             input_nodes: Vec::new(),
             output_nodes: Vec::new(),
         };
-
+        //let initial_gates = LogicGate::new(GateType::Not, SerializablePoint::new(0.0, 0.0));
         (
             Self {
-                gates: RefCell::new(vec![initial_gate]),
+                nodes: RefCell::new(vec![initial_node]),
+                gates: RefCell::new(None),
                 connections: RefCell::new(Vec::new()),
                 current_drag_position: RefCell::new(None),
                 current_dragging_line: RefCell::new(None),
                 drag_start: RefCell::new(None),
                 dragging_node: RefCell::new(None),
                 is_dragging: Cell::new(false),
+                dragging_gate_index: RefCell::new(None),
             },
             Command::none(),
         )
@@ -74,32 +74,43 @@ impl Application for LogicGateApp {
             },
             Message::AddInputNode(position) => {
                 let cursor_point = SerializablePoint {
-                    x: position.x,
+                    x: NODE_RADIUS + 10.0,
                     y: position.y,
                 };
 
+                let new_node = Node::new(cursor_point, NodeType::Output);
+
                 // Borrow the gates vector mutably from RefCell
-                let mut gates = self.gates.borrow_mut();
+                let mut nodes = self.nodes.borrow_mut();
 
                 // Get the first mutable element (if any) and add the input node
-                if let Some(gate) = gates.first_mut() {
-                    gate.add_input_node(cursor_point);
+                if let Some(node) = nodes.first_mut() {
+                    node.add_input_node(new_node);
                 }
             }
             Message::AddOutputNode(position, bounds) => {
                 let cursor_point = SerializablePoint {
-                    x: position.x,
+                    x: bounds.width - NODE_RADIUS - 10.0,
                     y: position.y,
                 };
 
-                // Borrow the gates vector mutably from RefCell
-                let mut gates = self.gates.borrow_mut();
+                let new_node = Node::new(cursor_point, NodeType::Output);
 
-                if let Some(gate) = gates.first_mut() {
-                    gate.add_output_node(cursor_point, bounds);
+                // Borrow the gates vector mutably from RefCell
+                let mut nodes = self.nodes.borrow_mut();
+
+                if let Some(node) = nodes.first_mut() {
+                    node.add_output_node(new_node);
                 }
             }
-            Message::AddGate(gate) => self.add_gate(gate, SerializablePoint { x: 50.0, y: 50.0 }),
+            Message::AddGate(gate, input, output) => {
+                self.add_gate(
+                    gate,
+                    SerializablePoint { x: 150.0, y: 400.0 },
+                    input,
+                    output,
+                );
+            }
         }
         Command::none()
     }
@@ -107,13 +118,17 @@ impl Application for LogicGateApp {
     fn view(&self) -> Element<Message> {
         let save_button = Button::new(Text::new("Save")).on_press(Message::Save);
         let load_button = Button::new(Text::new("Load")).on_press(Message::Load);
-        let and_gate = Button::new(Text::new("And gate")).on_press(Message::AddGate(GateType::And));
+        let not_gate =
+            Button::new(Text::new("Not gate")).on_press(Message::AddGate(GateType::Not, 1, 1));
 
         Column::new()
             .push(Canvas::new(self).width(Length::Fill).height(Length::Fill))
-            .push(save_button)
-            .push(load_button)
-            .push(and_gate)
+            .push(
+                row![save_button, load_button, not_gate]
+                    .spacing(10)
+                    .width(Length::Fill)
+                    .align_items(Alignment::Center),
+            )
             .into()
     }
 

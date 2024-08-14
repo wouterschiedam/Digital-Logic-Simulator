@@ -6,6 +6,12 @@ pub struct SerializablePoint {
     pub y: f32,
 }
 
+impl SerializablePoint {
+    pub fn new(x: f32, y: f32) -> Self {
+        Self { x, y }
+    }
+}
+
 impl From<iced::Point> for SerializablePoint {
     fn from(point: iced::Point) -> Self {
         Self {

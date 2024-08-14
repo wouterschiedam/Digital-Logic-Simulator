@@ -1,11 +1,6 @@
-use iced::Rectangle;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    helpers::NODE_RADIUS,
-    nodes::{Node, NodeType},
-    serialize_point::SerializablePoint,
-};
+use crate::{nodes::Nodes, serialize_point::SerializablePoint};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum GateType {
@@ -18,14 +13,18 @@ pub enum GateType {
 pub struct LogicGate {
     pub gate_type: GateType,
     pub position: SerializablePoint,
-    pub input_nodes: Vec<Node>,
-    pub output_nodes: Vec<Node>,
     pub inputs: Vec<bool>,
     pub outputs: Vec<bool>,
+    pub nodes: Nodes,
 }
 
 impl LogicGate {
-    pub fn new(gate_type: GateType, position: SerializablePoint) -> Self {
+    pub fn new(
+        gate_type: GateType,
+        position: SerializablePoint,
+        input: usize,
+        output: usize,
+    ) -> Self {
         let inputs = match gate_type {
             GateType::Not => vec![false], // NOT gate has 1 input
             _ => vec![false, false],      // AND, OR gates have 2 inputs
@@ -33,40 +32,11 @@ impl LogicGate {
         let outputs = vec![false]; // All gates have 1 output
         Self {
             gate_type,
+            nodes: Nodes::new(input, output, position.clone()),
             position,
-            input_nodes: Vec::new(),
-            output_nodes: Vec::new(),
             inputs,
             outputs,
         }
-    }
-
-    pub fn add_input_node(&mut self, position: SerializablePoint) {
-        let node_position = SerializablePoint {
-            x: NODE_RADIUS + 10.0,
-            y: position.y,
-        };
-
-        self.input_nodes.push(Node {
-            position: node_position,
-            state: false,
-            connected_to: None,
-            node_type: NodeType::Input,
-        });
-    }
-
-    pub fn add_output_node(&mut self, position: SerializablePoint, bounds: Rectangle) {
-        let node_position = SerializablePoint {
-            x: bounds.width - NODE_RADIUS - 10.0,
-            y: position.y,
-        };
-
-        self.output_nodes.push(Node {
-            position: node_position,
-            state: false,
-            connected_to: None,
-            node_type: NodeType::Output,
-        });
     }
 
     // Compute the output based on the gate type and inputs

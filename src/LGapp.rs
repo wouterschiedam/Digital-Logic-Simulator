@@ -6,6 +6,7 @@ use iced::{
 };
 use serde::{Deserialize, Serialize};
 use std::{
+    borrow::{Borrow, BorrowMut},
     cell::{Cell, RefCell, RefMut},
     fs::File,
     io::{Read, Write},
@@ -15,10 +16,10 @@ use crate::{
     gates::{GateType, LogicGate},
     helpers::{
         draw_corner_arc, is_point_near, CORNER_RADIUS, DEFAULT_MARGIN, LINE_WIDTH, MIN_DISTANCE,
-        NODE_RADIUS,
+        NODE_RADIUS, SMALL_NODE_RADIUS,
     },
     linepath::LinePath,
-    nodes::{Node, NodeType},
+    nodes::{Node, NodeType, Nodes},
     serialize_point::SerializablePoint,
     ui::Message,
 };
@@ -33,13 +34,15 @@ pub struct Connection {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogicGateApp {
-    pub gates: RefCell<Vec<LogicGate>>,
-    pub connections: RefCell<Vec<Connection>>, // (source gate index, target gate index)
-    pub dragging_node: RefCell<Option<(usize, NodeType)>>, // Track the node being dragged (gate index, node type)
+    pub nodes: RefCell<Vec<Nodes>>,
+    pub gates: RefCell<Option<Vec<LogicGate>>>,
+    pub connections: RefCell<Vec<Connection>>, // (source node index, target gate index)
+    pub dragging_node: RefCell<Option<(usize, NodeType)>>, // Track the node being dragged (node index, node type)
     pub drag_start: RefCell<Option<SerializablePoint>>,    // Starting point of the drag
     pub current_drag_position: RefCell<Option<SerializablePoint>>, // Current mouse position during the drag
     pub current_dragging_line: RefCell<Option<LinePath>>,
     pub is_dragging: Cell<bool>,
+    pub dragging_gate_index: RefCell<Option<usize>>,
 }
 
 impl LogicGateApp {
@@ -58,25 +61,42 @@ impl LogicGateApp {
         Ok(app_state)
     }
 
-    pub fn update_connections(connections: &mut [Connection], gates: &mut [LogicGate]) {
-        // First, gather the gates' output states and the corresponding connections to update
+    pub fn add_gate(
+        &mut self,
+        gate_type: GateType,
+        position: SerializablePoint,
+        input: usize,
+        output: usize,
+    ) {
+        let gate = LogicGate::new(gate_type, position, input, output);
+        let mut gates_ref = self.gates.borrow_mut();
+
+        if let Some(gates_vec) = gates_ref.as_mut() {
+            gates_vec.push(gate);
+        } else {
+            *gates_ref = Some(vec![gate]);
+        }
+    }
+
+    pub fn update_connections(connections: &mut [Connection], nodes: &mut [Nodes]) {
+        // First, gather the nodes' output states and the corresponding connections to update
         let mut updates = Vec::new();
 
-        for (gate_index, gate) in gates.iter().enumerate() {
-            if let Some(output) = gate.input_nodes.get(0) {
+        for (node_index, node) in nodes.iter().enumerate() {
+            if let Some(output) = node.input_nodes.get(0) {
                 if output.state {
                     // If output is active, prepare to activate the corresponding connections
                     for connection in connections.iter_mut() {
-                        if connection.from == gate_index {
-                            updates.push((connection.to, true)); // Mark the target gate input to activate
+                        if connection.from == node_index {
+                            updates.push((connection.to, true)); // Mark the target node input to activate
                             connection.is_active = true; // Mark the connection as active
                         }
                     }
                 } else {
                     // If output is inactive, prepare to deactivate the corresponding connections
                     for connection in connections.iter_mut() {
-                        if connection.from == gate_index {
-                            updates.push((connection.to, false)); // Mark the target gate input to deactivate
+                        if connection.from == node_index {
+                            updates.push((connection.to, false)); // Mark the target node input to deactivate
                             connection.is_active = false; // Mark the connection as inactive
                         }
                     }
@@ -85,43 +105,38 @@ impl LogicGateApp {
         }
 
         // Now, perform the updates with a mutable borrow
-        for (gate_index, state) in updates {
-            // Update the input state of the gate receiving the input
-            if let Some(input) = gates[gate_index].input_nodes.get_mut(0) {
+        for (node_index, state) in updates {
+            // Update the input state of the node receiving the input
+            if let Some(input) = nodes[node_index].input_nodes.get_mut(0) {
                 input.state = state;
             }
-            // Update the output state of the gate receiving the input
-            if let Some(output) = gates[gate_index].output_nodes.get_mut(0) {
+            // Update the output state of the node receiving the input
+            if let Some(output) = nodes[node_index].output_nodes.get_mut(0) {
                 output.state = state;
             }
         }
     }
 
-    pub fn add_gate(&mut self, gate_type: GateType, position: SerializablePoint) {
-        let gate = LogicGate::new(gate_type, position);
-        self.gates.borrow_mut().push(gate);
-    }
-
     fn find_node_at_position(
         &self,
         position: iced::Point,
-        gates: &mut RefMut<Vec<LogicGate>>,
+        nodes: &mut RefMut<Vec<Nodes>>,
     ) -> Option<(usize, NodeType)> {
-        // Iterate over each gate and its input_nodes/output_nodes
-        for (gate_index, gate) in gates.iter().enumerate() {
+        // Iterate over each node and its input_nodes/output_nodes
+        for (node_index, node) in nodes.iter().enumerate() {
             // Check the input nodes
-            for input in &gate.input_nodes {
+            for input in &node.input_nodes {
                 let node_position: iced::Point = input.position.clone().into();
                 if is_point_near(position, node_position, NODE_RADIUS) {
-                    return Some((gate_index, NodeType::Input));
+                    return Some((node_index, NodeType::Input));
                 }
             }
 
             // Check the output nodes
-            for output in &gate.output_nodes {
+            for output in &node.output_nodes {
                 let node_position: iced::Point = output.position.clone().into();
                 if is_point_near(position, node_position, NODE_RADIUS) {
-                    return Some((gate_index, NodeType::Output));
+                    return Some((node_index, NodeType::Output));
                 }
             }
         }
@@ -133,11 +148,11 @@ impl LogicGateApp {
     pub fn check_proximity_to_nodes(
         &self,
         cursor_position: iced::Point,
-        gates: &mut RefMut<Vec<LogicGate>>,
+        nodes: &mut RefMut<Vec<Nodes>>,
         start_position: &SerializablePoint,
     ) -> Option<SerializablePoint> {
-        for gate in gates.iter() {
-            for node in &gate.input_nodes {
+        for node in nodes.iter() {
+            for node in &node.input_nodes {
                 let node_position: iced::Point = node.position.clone().into();
                 if node.position != *start_position
                     && is_point_near(cursor_position, node_position, 1.0)
@@ -146,7 +161,7 @@ impl LogicGateApp {
                 }
             }
 
-            for node in &gate.output_nodes {
+            for node in &node.output_nodes {
                 let node_position: iced::Point = node.position.clone().into();
                 if node.position != *start_position
                     && is_point_near(cursor_position, node_position, 5.0)
@@ -170,13 +185,39 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
         bounds: Rectangle,
         cursor: Cursor,
     ) -> (Status, Option<Message>) {
+        let mut nodes = self.nodes.borrow_mut();
         let mut gates = self.gates.borrow_mut();
 
         match event {
             canvas::Event::Mouse(mouse::Event::ButtonPressed(mouse::Button::Left)) => {
                 if let Some(cursor_position) = cursor.position_in(bounds) {
-                    for (gate_index, gate) in gates.iter_mut().enumerate() {
-                        for input in &mut gate.input_nodes {
+                    if let Some(gates) = gates.as_ref() {
+                        for (index, gate) in gates.iter().enumerate() {
+                            let gate_position: iced::Point = gate.position.clone().into();
+                            let gate_rect = Rectangle {
+                                x: gate_position.x,
+                                y: gate_position.y,
+                                width: 50.0,
+                                height: 30.0,
+                            };
+
+                            if gate_rect.contains(cursor_position) {
+                                let offset = iced::Point {
+                                    x: cursor_position.x - gate_position.x,
+                                    y: cursor_position.y - gate_position.y,
+                                };
+
+                                // Gate is clicked, start dragging
+                                self.is_dragging.set(true);
+                                *self.dragging_gate_index.borrow_mut() = Some(index);
+                                *self.drag_start.borrow_mut() = Some(offset.into());
+                                return (iced::event::Status::Captured, None);
+                            }
+                        }
+                    }
+
+                    for (node_index, node) in nodes.iter_mut().enumerate() {
+                        for input in &mut node.input_nodes {
                             if is_point_near(
                                 cursor_position,
                                 input.position.clone().into(),
@@ -188,13 +229,13 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
                                         y: cursor_position.y,
                                     }));
                                 *self.dragging_node.borrow_mut() =
-                                    Some((gate_index, NodeType::Input));
+                                    Some((node_index, NodeType::Input));
                                 *self.drag_start.borrow_mut() = Some(input.position.clone());
                                 self.is_dragging.set(false);
                                 return (Status::Captured, None);
                             }
                         }
-                        for output in &mut gate.output_nodes {
+                        for output in &mut node.output_nodes {
                             if is_point_near(
                                 cursor_position,
                                 output.position.clone().into(),
@@ -206,7 +247,7 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
                                         y: cursor_position.y,
                                     }));
                                 *self.dragging_node.borrow_mut() =
-                                    Some((gate_index, NodeType::Output));
+                                    Some((node_index, NodeType::Output));
                                 *self.drag_start.borrow_mut() = Some(output.position.clone());
                                 self.is_dragging.set(false);
                                 return (Status::Captured, None);
@@ -236,14 +277,27 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
                 let mut start_node_index = None;
                 if let Some(drag_start_point) = self.drag_start.borrow().as_ref() {
                     start_node_index =
-                        self.find_node_at_position(drag_start_point.clone().into(), &mut gates);
+                        self.find_node_at_position(drag_start_point.clone().into(), &mut nodes);
+                }
+
+                if let Some(index) = *self.dragging_gate_index.borrow() {
+                    if let Some(gates) = gates.borrow_mut().as_mut() {
+                        if let Some(gate) = gates.get_mut(index) {
+                            if let Some(offset) = self.drag_start.borrow().as_ref() {
+                                // Update gate position based on cursor movement
+                                gate.position.x = position.x - offset.x;
+                                gate.position.y = position.y - offset.y;
+                                return (iced::event::Status::Captured, None);
+                            }
+                        }
+                    }
                 }
 
                 if let Some(current_path) = self.current_dragging_line.borrow_mut().as_mut() {
                     if let Some(last_position) = current_path.last_point() {
                         // Perform proximity check, skipping the start node
                         final_position =
-                            self.check_proximity_to_nodes(position, &mut gates, last_position);
+                            self.check_proximity_to_nodes(position, &mut nodes, last_position);
 
                         if final_position.is_some() {
                             finalize_connection = true;
@@ -280,7 +334,7 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
 
                             // Determine the target node index
                             if let Some((target_node_index, _)) =
-                                self.find_node_at_position(final_position.into(), &mut gates)
+                                self.find_node_at_position(final_position.into(), &mut nodes)
                             {
                                 // Store the connection with the custom path
                                 let path = current_path.points.clone();
@@ -304,16 +358,17 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
             canvas::Event::Mouse(mouse::Event::ButtonReleased(mouse::Button::Left)) => {
                 if self.is_dragging.get() {
                     *self.current_dragging_line.borrow_mut() = None;
+                    *self.dragging_gate_index.borrow_mut() = None;
 
-                    // extracted the start_gate_index using map() to immediately get the value and drop the Ref borrow as soon as possible.
-                    let start_gate_index_opt = {
+                    // extracted the start_node_index using map() to immediately get the value and drop the Ref borrow as soon as possible.
+                    let start_node_index_opt = {
                         let start_node = self.dragging_node.borrow();
                         start_node
                             .as_ref()
-                            .map(|(start_gate_index, _)| *start_gate_index)
+                            .map(|(start_node_index, _)| *start_node_index)
                     };
 
-                    if let Some(start_gate_index) = start_gate_index_opt {
+                    if let Some(start_node_index) = start_node_index_opt {
                         if let Some(cursor_position) = cursor.position_in(bounds) {
                             let _cursor_point = SerializablePoint {
                                 x: cursor_position.x,
@@ -322,31 +377,31 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
 
                             let mut connection_to_add = None;
 
-                            for (gate_index, gate) in gates.iter_mut().enumerate() {
-                                for input in &mut gate.input_nodes {
+                            for (node_index, node) in nodes.iter_mut().enumerate() {
+                                for input in &mut node.input_nodes {
                                     if is_point_near(
                                         cursor_position,
                                         input.position.clone().into(),
                                         NODE_RADIUS,
                                     ) {
                                         connection_to_add = Some(Connection {
-                                            from: start_gate_index,
-                                            to: gate_index,
+                                            from: start_node_index,
+                                            to: node_index,
                                             is_active: false,
                                             path: Vec::new(),
                                         });
                                         break;
                                     }
                                 }
-                                for output in &mut gate.output_nodes {
+                                for output in &mut node.output_nodes {
                                     if is_point_near(
                                         cursor_position,
                                         output.position.clone().into(),
                                         NODE_RADIUS,
                                     ) {
                                         connection_to_add = Some(Connection {
-                                            from: start_gate_index,
-                                            to: gate_index,
+                                            from: start_node_index,
+                                            to: node_index,
                                             is_active: false,
                                             path: Vec::new(),
                                         });
@@ -357,6 +412,30 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
                                     break;
                                 }
                             }
+
+                            if let Some(gates_vec) = gates.as_mut() {
+                                for (gate_index, gate) in gates_vec.iter_mut().enumerate() {
+                                    println!("{:?}", gate);
+                                    for input in &gate.nodes.input_nodes {
+                                        if is_point_near(
+                                            cursor_position,
+                                            input.position.clone().into(),
+                                            NODE_RADIUS,
+                                        ) {
+                                            connection_to_add = Some(Connection {
+                                                from: start_node_index,
+                                                to: gate_index,
+                                                is_active: false,
+                                                path: Vec::new(),
+                                            });
+                                            break;
+                                        }
+                                    }
+                                }
+                            } else {
+                                println!("No gates found.");
+                            }
+
                             if let Some(connection) = connection_to_add {
                                 {
                                     // Push the connection to the connections vector
@@ -367,18 +446,18 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
                                 // Now perform the update using a new mutable borrow
                                 LogicGateApp::update_connections(
                                     &mut self.connections.borrow_mut(),
-                                    &mut gates,
+                                    &mut nodes,
                                 );
                             }
                         }
                     }
                 } else {
                     // Handle a click (toggle the node state)
-                    if let Some((gate_index, node_type)) = self.dragging_node.borrow().as_ref() {
-                        let gate = &mut gates[*gate_index];
+                    if let Some((node_index, node_type)) = self.dragging_node.borrow().as_ref() {
+                        let node = &mut nodes[*node_index];
                         match node_type {
                             NodeType::Input => {
-                                if let Some(node) = gate.input_nodes.iter_mut().find(|n| {
+                                if let Some(node) = node.input_nodes.iter_mut().find(|n| {
                                     is_point_near(
                                         cursor.position_in(bounds).unwrap(),
                                         n.position.clone().into(),
@@ -388,12 +467,12 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
                                     node.state = !node.state;
                                     LogicGateApp::update_connections(
                                         &mut self.connections.borrow_mut(),
-                                        &mut gates,
+                                        &mut nodes,
                                     );
                                 }
                             }
                             NodeType::Output => {
-                                if let Some(node) = gate.output_nodes.iter_mut().find(|n| {
+                                if let Some(node) = node.output_nodes.iter_mut().find(|n| {
                                     is_point_near(
                                         cursor.position_in(bounds).unwrap(),
                                         n.position.clone().into(),
@@ -403,7 +482,7 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
                                     node.state = !node.state;
                                     LogicGateApp::update_connections(
                                         &mut self.connections.borrow_mut(),
-                                        &mut gates,
+                                        &mut nodes,
                                     );
                                 }
                             }
@@ -449,10 +528,10 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
                 .with_color(Color::from_rgb(0.7, 0.7, 0.7)),
         );
 
-        let gates = self.gates.borrow();
+        let nodes = self.nodes.borrow();
 
-        for gate in gates.iter() {
-            for input in &gate.input_nodes {
+        for node in nodes.iter() {
+            for input in &node.input_nodes {
                 let node_shape = canvas::Path::circle(input.position.clone().into(), NODE_RADIUS);
                 if input.state {
                     frame.fill(&node_shape, Color::from_rgb(1.0, 0.0, 0.0));
@@ -460,13 +539,63 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
                     frame.fill(&node_shape, Color::from_rgb(0.3, 0.3, 0.3));
                 }
             }
-            for output in &gate.output_nodes {
+            for output in &node.output_nodes {
                 let node_shape = canvas::Path::circle(output.position.clone().into(), NODE_RADIUS);
                 if output.state {
                     frame.fill(&node_shape, Color::from_rgb(1.0, 0.0, 0.0));
                 } else {
                     frame.fill(&node_shape, Color::from_rgb(0.3, 0.3, 0.3));
                 }
+            }
+        }
+
+        let gates = self.gates.borrow();
+        if let Some(gates_vec) = gates.as_ref() {
+            for gate in gates_vec.iter() {
+                let position: iced::Point = gate.position.clone().into();
+                let gate_shape = Path::rectangle(position, iced::Size::new(50.0, 30.0)); // Example size
+                frame.fill(&gate_shape, Color::from_rgb(0.7, 0.7, 0.7)); // Fill color for gate
+
+                // Draw inputs and outputs
+                for (i, &input) in gate.inputs.iter().enumerate() {
+                    let input_pos;
+                    if gate.nodes.input_nodes.len() <= 1 {
+                        input_pos = iced::Point::new(position.x, position.y + i as f32 + 15.0);
+                    } else {
+                        input_pos = iced::Point::new(position.x, position.y + i as f32 * 10.0);
+                    }
+                    let input_shape = Path::circle(input_pos, SMALL_NODE_RADIUS);
+                    frame.fill(
+                        &input_shape,
+                        if input { Color::WHITE } else { Color::BLACK },
+                    );
+                }
+
+                let gate_name = match gate.gate_type {
+                    GateType::And => "AND",
+                    GateType::Or => "OR",
+                    GateType::Not => "NOT",
+                };
+
+                let text_position = iced::Point::new(position.x + 8.0, position.y + 5.0); // Adjust position as needed
+                frame.fill_text(canvas::Text {
+                    content: gate_name.to_string(),
+                    position: text_position,
+                    color: Color::BLACK,
+                    size: iced::Pixels(16.0), // Font size
+                    ..canvas::Text::default()
+                });
+
+                let output_pos = iced::Point::new(position.x + 50.0, position.y + 15.0);
+                let output_shape = Path::circle(output_pos, 5.0);
+                frame.fill(
+                    &output_shape,
+                    if gate.get_output() {
+                        Color::WHITE
+                    } else {
+                        Color::BLACK
+                    },
+                );
             }
         }
 

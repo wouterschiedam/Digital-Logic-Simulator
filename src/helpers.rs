@@ -4,6 +4,7 @@ use iced::{
 };
 
 pub const NODE_RADIUS: f32 = 15.0;
+pub const SMALL_NODE_RADIUS: f32 = 5.0;
 pub const LINE_WIDTH: f32 = 3.0;
 pub const CORNER_RADIUS: f32 = 3.0;
 pub const DEFAULT_MARGIN: f32 = 25.0;
