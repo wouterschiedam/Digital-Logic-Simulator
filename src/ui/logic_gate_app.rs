@@ -7,6 +7,7 @@ use std::fs;
 
 use crate::{
     components::{
+        connection::Connection,
         gate::{GateType, LogicGate},
         line_path::LinePath,
         node::{Node, NodeType},
@@ -24,11 +25,13 @@ pub enum Message {
     AddInputNode(Point),
     AddOutputNode(Point, Rectangle),
     AddGate(GateType, usize, usize),
+    AddConnection(usize),
     UpdateDraggingGate(usize, SerializablePoint),
     UpdateDraggingNode(Option<(usize, NodeType)>, Option<SerializablePoint>, Point),
     UpdateDraggingGatePosition(Point, usize, SerializablePoint),
     UpdateNodeState(usize, NodeType),
     UpdateDraggingLine(Point, SerializablePoint),
+    UpdateIsDragging,
     RemoveNode(usize, NodeType),
     DisabledDragging,
 }
@@ -167,6 +170,17 @@ impl Application for LogicGateApp {
                     node.add_output_node(new_node);
                 }
             }
+            Message::AddConnection(target_node_index) => {
+                if let Some(path) = &self.current_dragging_line {
+                    if let Some((start_index, _)) = self.dragging_node {
+                        self.state.connections.push(Connection::new(
+                            start_index,
+                            target_node_index,
+                            path.points.clone(),
+                        ));
+                    }
+                }
+            }
             Message::UpdateDraggingNode(node, start, position) => {
                 self.dragging_node = node;
                 self.current_dragging_line = Some(LinePath::new(SerializablePoint::new(
@@ -189,6 +203,7 @@ impl Application for LogicGateApp {
                 self.is_dragging = false;
                 self.drag_start = None;
             }
+            Message::UpdateIsDragging => self.is_dragging = true,
             Message::UpdateNodeState(node, node_type) => match node_type {
                 NodeType::Input => {
                     self.state.nodes[0].input_nodes[node].state =

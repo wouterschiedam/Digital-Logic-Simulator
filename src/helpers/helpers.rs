@@ -9,7 +9,7 @@ pub const NODE_RADIUS: f32 = 15.0;
 pub const SMALL_NODE_RADIUS: f32 = 5.0;
 pub const LINE_WIDTH: f32 = 3.0;
 pub const DEFAULT_MARGIN: f32 = 25.0;
-pub const MIN_DISTANCE: f32 = 10.0;
+pub const MIN_DISTANCE: f32 = 5.0;
 pub const DIRECTION_CHANGE_THRESHOLD: f32 = 600.0;
 
 pub const MIN_GATE_WIDTH: f32 = 50.0;

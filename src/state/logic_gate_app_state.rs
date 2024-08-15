@@ -141,35 +141,35 @@ impl LogicGateAppState {
         &self,
         cursor_position: Point,
         start_position: &SerializablePoint,
-    ) -> Option<SerializablePoint> {
+    ) -> Option<(SerializablePoint, NodeType)> {
         for node in self.nodes.iter() {
-            for node in &node.input_nodes {
+            for (node_index, node) in node.input_nodes.iter().enumerate() {
                 if node.position != *start_position && is_point_near_node(cursor_position, node) {
-                    return Some(node.position.clone());
+                    return Some((node.position.clone(), NodeType::Input));
                 }
             }
 
-            for node in &node.output_nodes {
+            for (node_index, node) in node.output_nodes.iter().enumerate() {
                 if node.position != *start_position && is_point_near_node(cursor_position, node) {
-                    return Some(node.position.clone());
+                    return Some((node.position.clone(), NodeType::Output));
                 }
             }
         }
 
         for gate in self.gates.iter() {
-            for input_node in &gate.nodes.input_nodes {
+            for (node_index, input_node) in gate.nodes.input_nodes.iter().enumerate() {
                 if input_node.position != *start_position
                     && is_point_near_gate(cursor_position, gate)
                 {
-                    return Some(input_node.position.clone());
+                    return Some((input_node.position.clone(), NodeType::Input));
                 }
             }
 
-            for output_node in &gate.nodes.output_nodes {
+            for (node_index, output_node) in gate.nodes.output_nodes.iter().enumerate() {
                 if output_node.position != *start_position
                     && is_point_near_gate(cursor_position, gate)
                 {
-                    return Some(output_node.position.clone());
+                    return Some((output_node.position.clone(), NodeType::Output));
                 }
             }
         }

@@ -91,6 +91,24 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
                 }
             }
             canvas::Event::Mouse(Event::CursorMoved { position }) => {
+                // Finnish connetion
+                if let Some(start_position) = self.drag_start {
+                    if let Some((final_position, _node_type)) = self
+                        .state
+                        .check_proximity_to_nodes(position, &start_position)
+                    {
+                        if let Some((target_node_index, _)) =
+                            self.state.find_node_at_position(final_position.into())
+                        {
+                            return (
+                                Status::Captured,
+                                Some(Message::AddConnection(target_node_index)),
+                            );
+                        }
+                    }
+                }
+
+                // Draw current dragging line
                 if let Some(current_path) = &self.current_dragging_line {
                     if let Some(last_position) = current_path.last_point() {
                         if self.is_dragging {
@@ -101,6 +119,11 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
                         }
                     }
                     return (Status::Ignored, None);
+                }
+
+                // Means we are dragging from the node so we can set dragging to true
+                if self.state.find_node_at_position(position) == None {
+                    return (Status::Captured, Some(Message::UpdateIsDragging));
                 }
 
                 // Drag gates around canvas
