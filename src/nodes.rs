@@ -28,29 +28,51 @@ pub struct Nodes {
 }
 
 impl Nodes {
-    pub fn new(input: usize, output: usize, gate_position: SerializablePoint) -> Self {
+    pub fn new(
+        input: usize,
+        output: usize,
+        gate_position: SerializablePoint,
+        height: f32,
+        width: f32,
+    ) -> Self {
         Self {
-            input_nodes: Self::create_input_nodes(input, &gate_position),
-            output_nodes: Self::create_output_nodes(output, &gate_position),
+            input_nodes: Self::create_input_nodes(input, &gate_position, height, width),
+            output_nodes: Self::create_output_nodes(output, &gate_position, height, width),
         }
     }
 
-    pub fn create_input_nodes(count: usize, gate_position: &SerializablePoint) -> Vec<Node> {
+    pub fn create_input_nodes(
+        count: usize,
+        gate_position: &SerializablePoint,
+        height: f32,
+        width: f32,
+    ) -> Vec<Node> {
         (0..count)
-            .map(|_i| {
+            .map(|i| {
                 Node::new(
-                    SerializablePoint::new(gate_position.x, gate_position.y),
+                    SerializablePoint::new(
+                        gate_position.x,
+                        gate_position.y + (i as f32 + 1.0) * height / (count as f32 + 1.0),
+                    ),
                     NodeType::Input,
                 )
             })
             .collect()
     }
 
-    pub fn create_output_nodes(count: usize, gate_position: &SerializablePoint) -> Vec<Node> {
+    pub fn create_output_nodes(
+        count: usize,
+        gate_position: &SerializablePoint,
+        height: f32,
+        width: f32,
+    ) -> Vec<Node> {
         (0..count)
-            .map(|_i| {
+            .map(|i| {
                 Node::new(
-                    SerializablePoint::new(gate_position.x, gate_position.y),
+                    SerializablePoint::new(
+                        gate_position.x + width,
+                        gate_position.y + (i as f32 + 1.0) * height / (count as f32 + 1.0),
+                    ),
                     NodeType::Output,
                 )
             })

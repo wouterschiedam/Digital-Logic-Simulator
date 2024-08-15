@@ -11,6 +11,19 @@ pub const DEFAULT_MARGIN: f32 = 25.0;
 pub const MIN_DISTANCE: f32 = 10.0;
 pub const PROXIMITY_THRESHOLD: f32 = 20.0;
 
+pub const MIN_GATE_WIDTH: f32 = 50.0;
+pub const MIN_GATE_HEIGHT: f32 = 30.0;
+
+pub fn calculate_gate_size(num_inputs: usize, num_outputs: usize) -> (f32, f32) {
+    // Calculate height based on the maximum number of nodes
+    let node_size = 10.0; // Height increment per node
+    let height = MIN_GATE_HEIGHT.max((num_inputs.max(num_outputs) as f32) * node_size);
+
+    let width = MIN_GATE_WIDTH; // For simplicity, keeping width constant
+
+    (width, height)
+}
+
 pub fn is_point_near(p1: iced::Point, p2: iced::Point, threshold: f32) -> bool {
     let dx = p1.x - p2.x;
     let dy = p1.y - p2.y;

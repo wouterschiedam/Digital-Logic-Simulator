@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{nodes::Nodes, serialize_point::SerializablePoint};
+use crate::{helpers::calculate_gate_size, nodes::Nodes, serialize_point::SerializablePoint};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum GateType {
     And,
     Or,
@@ -16,6 +16,8 @@ pub struct LogicGate {
     pub inputs: Vec<bool>,
     pub outputs: Vec<bool>,
     pub nodes: Nodes,
+    pub width: f32,
+    pub height: f32,
 }
 
 impl LogicGate {
@@ -30,12 +32,17 @@ impl LogicGate {
             _ => vec![false, false],      // AND, OR gates have 2 inputs
         };
         let outputs = vec![false]; // All gates have 1 output
+
+        let (width, height) = calculate_gate_size(input, output);
+
         Self {
             gate_type,
-            nodes: Nodes::new(input, output, position.clone()),
+            nodes: Nodes::new(input, output, position.clone(), height, width),
             position,
             inputs,
             outputs,
+            height,
+            width,
         }
     }
 
@@ -62,6 +69,3 @@ impl LogicGate {
         self.outputs[0]
     }
 }
-
-
-
