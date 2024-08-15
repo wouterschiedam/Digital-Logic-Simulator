@@ -20,12 +20,6 @@ pub struct LogicGateAppState {
     pub nodes: Vec<Nodes>,
     pub gates: Vec<LogicGate>,
     pub connections: Vec<Connection>,
-    pub dragging_node: Option<(usize, NodeType)>,
-    pub drag_start: Option<SerializablePoint>,
-    pub current_drag_position: Option<SerializablePoint>,
-    pub current_dragging_line: Option<LinePath>,
-    pub is_dragging: bool,
-    pub dragging_gate_index: Option<usize>,
 }
 
 impl LogicGateAppState {
@@ -53,12 +47,6 @@ impl LogicGateAppState {
             nodes: vec![initial_nodes],
             gates: Vec::new(),
             connections: Vec::new(),
-            dragging_node: None,
-            drag_start: None,
-            current_drag_position: None,
-            current_dragging_line: None,
-            is_dragging: false,
-            dragging_gate_index: None,
         }
     }
 
@@ -125,13 +113,13 @@ impl LogicGateAppState {
     }
 
     pub fn find_node_at_position(&self, position: Point) -> Option<(usize, NodeType)> {
-        for (node_index, node) in self.nodes.iter().enumerate() {
-            for input in &node.input_nodes {
+        for node in self.nodes.iter() {
+            for (node_index, input) in node.input_nodes.iter().enumerate() {
                 if is_point_near_node(position, input) {
                     return Some((node_index, NodeType::Input));
                 }
             }
-            for output in &node.output_nodes {
+            for (node_index, output) in node.output_nodes.iter().enumerate() {
                 if is_point_near_node(position, output) {
                     return Some((node_index, NodeType::Output));
                 }

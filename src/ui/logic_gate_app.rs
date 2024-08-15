@@ -8,10 +8,11 @@ use std::fs;
 use crate::{
     components::{
         gate::{GateType, LogicGate},
+        line_path::LinePath,
         node::{Node, NodeType},
     },
     config::logic_gate_config::LogicGateConfig,
-    helpers::helpers::NODE_RADIUS,
+    helpers::helpers::{MIN_DISTANCE, NODE_RADIUS},
     serialize_point::SerializablePoint,
     state::logic_gate_app_state::LogicGateAppState,
 };
@@ -24,14 +25,22 @@ pub enum Message {
     AddOutputNode(Point, Rectangle),
     AddGate(GateType, usize, usize),
     UpdateDraggingGate(usize, SerializablePoint),
-    UpdateDraggingNode(Option<(usize, NodeType)>, Option<SerializablePoint>),
+    UpdateDraggingNode(Option<(usize, NodeType)>, Option<SerializablePoint>, Point),
     UpdateDraggingGatePosition(Point, usize, SerializablePoint),
     UpdateNodeState(usize, NodeType),
+    UpdateDraggingLine(Point, SerializablePoint),
+    RemoveNode(usize, NodeType),
     DisabledDragging,
 }
 
 pub struct LogicGateApp {
     pub state: LogicGateAppState,
+    pub dragging_node: Option<(usize, NodeType)>,
+    pub drag_start: Option<SerializablePoint>,
+    pub current_drag_position: Option<SerializablePoint>,
+    pub current_dragging_line: Option<LinePath>,
+    pub is_dragging: bool,
+    pub dragging_gate_index: Option<usize>,
 }
 
 pub fn run() -> iced::Result {
@@ -48,6 +57,12 @@ impl LogicGateApp {
     pub fn new() -> Self {
         Self {
             state: LogicGateAppState::new(),
+            dragging_node: None,
+            drag_start: None,
+            current_drag_position: None,
+            current_dragging_line: None,
+            is_dragging: false,
+            dragging_gate_index: None,
         }
     }
 
@@ -152,24 +167,27 @@ impl Application for LogicGateApp {
                     node.add_output_node(new_node);
                 }
             }
-            Message::UpdateDraggingNode(node, start) => {
-                self.state.dragging_node = node;
-                self.state.is_dragging = true;
-                self.state.drag_start = start;
+            Message::UpdateDraggingNode(node, start, position) => {
+                self.dragging_node = node;
+                self.current_dragging_line = Some(LinePath::new(SerializablePoint::new(
+                    position.x, position.y,
+                )));
+                self.is_dragging = true;
+                self.drag_start = start;
             }
             Message::UpdateDraggingGate(gate_index, offset) => {
-                self.state.dragging_gate_index = Some(gate_index);
-                self.state.is_dragging = true;
-                self.state.drag_start = Some(offset);
+                self.dragging_gate_index = Some(gate_index);
+                self.is_dragging = true;
+                self.drag_start = Some(offset);
             }
             Message::UpdateDraggingGatePosition(position, index, offset) => {
                 self.update_position(position, index, offset)
             }
             Message::DisabledDragging => {
-                self.state.dragging_node = None;
-                self.state.dragging_gate_index = None;
-                self.state.is_dragging = false;
-                self.state.drag_start = None;
+                self.dragging_node = None;
+                self.dragging_gate_index = None;
+                self.is_dragging = false;
+                self.drag_start = None;
             }
             Message::UpdateNodeState(node, node_type) => match node_type {
                 NodeType::Input => {
@@ -179,6 +197,38 @@ impl Application for LogicGateApp {
                 NodeType::Output => {
                     self.state.nodes[0].output_nodes[node].state =
                         !self.state.nodes[0].output_nodes[node].state;
+                }
+            },
+            Message::UpdateDraggingLine(position, last_position) => {
+                let distance_x = (last_position.x - position.x).abs();
+                let distance_y = (last_position.y - position.y).abs();
+
+                if distance_x > MIN_DISTANCE || distance_y > MIN_DISTANCE {
+                    self.is_dragging = true;
+
+                    let new_point = if distance_x > distance_y {
+                        SerializablePoint {
+                            x: position.x,
+                            y: last_position.y,
+                        }
+                    } else {
+                        SerializablePoint {
+                            x: last_position.x,
+                            y: position.y,
+                        }
+                    };
+
+                    if let Some(dragging_line) = self.current_dragging_line.as_mut() {
+                        dragging_line.add_point(new_point);
+                    }
+                }
+            }
+            Message::RemoveNode(node_index, node_type) => match node_type {
+                NodeType::Input => {
+                    self.state.nodes[0].input_nodes.remove(node_index);
+                }
+                NodeType::Output => {
+                    self.state.nodes[0].output_nodes.remove(node_index);
                 }
             },
             Message::AddGate(gate, input, output) => {

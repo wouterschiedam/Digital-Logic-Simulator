@@ -9,7 +9,10 @@ use crate::{
     components::node::NodeType,
     serialize_point::SerializablePoint,
     state::logic_gate_app_state::LogicGateAppState,
-    ui::draw::{canvas_frame, canvas_free_nodes, canvas_gates},
+    ui::draw::{
+        canvas_connection_on_the_fly, canvas_connections, canvas_frame, canvas_free_nodes,
+        canvas_gates,
+    },
 };
 
 use super::{
@@ -22,14 +25,23 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
 
     fn update(
         &self,
-        state: &mut Self::State,
+        _state: &mut Self::State,
         event: canvas::Event,
         bounds: Rectangle,
         cursor: Cursor,
     ) -> (iced::event::Status, Option<Message>) {
         match event {
             canvas::Event::Mouse(Event::ButtonPressed(Button::Right)) => {
-                if let Some(cursor_position) = cursor.position_in(bounds) {}
+                if let Some(cursor_position) = cursor.position_in(bounds) {
+                    if let Some((node_index, node_type)) =
+                        self.state.find_node_at_position(cursor_position)
+                    {
+                        return (
+                            Status::Captured,
+                            Some(Message::RemoveNode(node_index, node_type)),
+                        );
+                    }
+                }
             }
             canvas::Event::Mouse(Event::ButtonPressed(Button::Left)) => {
                 if let Some(cursor_position) = cursor.position_in(bounds) {
@@ -52,6 +64,7 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
                             Some(Message::UpdateDraggingNode(
                                 Some((node_index, node_type)),
                                 drag_start,
+                                cursor_position,
                             )),
                         );
                     }
@@ -78,15 +91,21 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
                 }
             }
             canvas::Event::Mouse(Event::CursorMoved { position }) => {
-                if let Some(dragging_node) = &state.dragging_node {
-                    if let Some(line_path) = &mut state.current_dragging_line {
-                        line_path.add_point(SerializablePoint::new(position.x, position.y));
+                if let Some(current_path) = &self.current_dragging_line {
+                    if let Some(last_position) = current_path.last_point() {
+                        if self.is_dragging {
+                            return (
+                                Status::Captured,
+                                Some(Message::UpdateDraggingLine(position, *last_position)),
+                            );
+                        }
                     }
-                    return (Status::Captured, None);
+                    return (Status::Ignored, None);
                 }
 
-                if let Some(index) = self.state.dragging_gate_index {
-                    if let Some(offset) = self.state.drag_start {
+                // Drag gates around canvas
+                if let Some(index) = self.dragging_gate_index {
+                    if let Some(offset) = self.drag_start {
                         return (
                             Status::Captured,
                             Some(Message::UpdateDraggingGatePosition(position, index, offset)),
@@ -95,15 +114,19 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
                 }
             }
             canvas::Event::Mouse(Event::ButtonReleased(Button::Left)) => {
-                if let Some((node_index, node_type)) = &self.state.dragging_node {
-                    if *node_type == NodeType::Input {
-                        return (
-                            Status::Captured,
-                            Some(Message::UpdateNodeState(*node_index, node_type.clone())),
-                        );
+                if let Some(cursor_position) = cursor.position_in(bounds) {
+                    if let Some((node_index, node_type)) = &self.dragging_node {
+                        if *node_type == NodeType::Input
+                            && self.state.find_node_at_position(cursor_position) != None
+                        {
+                            return (
+                                Status::Captured,
+                                Some(Message::UpdateNodeState(*node_index, node_type.clone())),
+                            );
+                        }
                     }
+                    return (Status::Captured, Some(Message::DisabledDragging));
                 }
-                return (Status::Captured, Some(Message::DisabledDragging));
             }
             _ => {}
         }
@@ -126,6 +149,11 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
         canvas_free_nodes(&mut frame, &self.state.nodes);
 
         canvas_gates(&mut frame, &self.state.gates);
+
+        // Connections on the go
+        canvas_connection_on_the_fly(&mut frame, &self.current_dragging_line);
+
+        canvas_connections(&mut frame, &self.state.connections);
 
         vec![frame.into_geometry()]
     }
