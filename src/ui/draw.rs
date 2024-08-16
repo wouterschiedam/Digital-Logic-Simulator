@@ -11,19 +11,19 @@ use crate::{
         node::Nodes,
     },
     helpers::helpers::{
-        draw_smooth_corner_curve, DEFAULT_MARGIN, DIRECTION_CHANGE_THRESHOLD, LINE_WIDTH,
-        NODE_RADIUS, SMALL_NODE_RADIUS,
+        draw_smooth_corner_curve, CANVAS_HEIGHT, CANVAS_WIDTH, DEFAULT_MARGIN,
+        DIRECTION_CHANGE_THRESHOLD, LINE_WIDTH, NODE_RADIUS, SMALL_NODE_RADIUS,
     },
 };
 
-pub fn canvas_frame(frame: &mut Frame, bounds: Rectangle) {
+pub fn canvas_frame(frame: &mut Frame) {
     // Define margin size
     let margin = DEFAULT_MARGIN;
 
     // Calculate the size and position of the rectangle
     let rect_position = iced::Point::new(margin, margin);
 
-    let rect_size = iced::Size::new(bounds.width - 2.0 * margin, bounds.height - 2.0 * margin);
+    let rect_size = iced::Size::new(CANVAS_WIDTH - (margin * 2.0), CANVAS_HEIGHT - margin);
 
     // Create the rectangle path
     let rect_path = Path::rectangle(rect_position, rect_size);
@@ -126,12 +126,23 @@ pub fn canvas_connections(frame: &mut Frame, connections: &Vec<Connection>) {
     }
 }
 
-pub fn canvas_connection_on_the_fly(frame: &mut Frame, line: &Option<LinePath>) {
+pub fn clamp_point(point: Point, bounds: &Rectangle) -> Point {
+    Point::new(
+        point.x.clamp(bounds.x, bounds.x + bounds.width),
+        point.y.clamp(bounds.y, bounds.y + bounds.height),
+    )
+}
+
+pub fn canvas_connection_on_the_fly(
+    frame: &mut Frame,
+    bounds: &Rectangle,
+    line: &Option<LinePath>,
+) {
     if let Some(current_path) = line {
         if current_path.points.len() > 1 {
             for i in 0..current_path.points.len() - 1 {
-                let start_point = current_path.points[i].clone().into();
-                let end_point = current_path.points[i + 1].clone().into();
+                let start_point = clamp_point(current_path.points[i].clone().into(), bounds);
+                let end_point = clamp_point(current_path.points[i + 1].clone().into(), bounds);
 
                 // Draw each segment of the path
                 frame.stroke(
@@ -142,7 +153,7 @@ pub fn canvas_connection_on_the_fly(frame: &mut Frame, line: &Option<LinePath>) 
                 );
 
                 if i < current_path.points.len() - 2 {
-                    let next_point: Point = current_path.points[i + 2].clone().into();
+                    let next_point = clamp_point(current_path.points[i + 2].clone().into(), bounds);
 
                     let current_direction =
                         (end_point.x - start_point.x, end_point.y - start_point.y);

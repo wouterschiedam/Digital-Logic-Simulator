@@ -8,7 +8,10 @@ use crate::{
     config::logic_gate_config::LogicGateConfig,
     helpers::{
         self,
-        helpers::{is_point_near_gate, is_point_near_node, NODE_RADIUS},
+        helpers::{
+            is_point_near_gate, is_point_near_node, CANVAS_HEIGHT, CANVAS_WIDTH, DEFAULT_MARGIN,
+            NODE_RADIUS,
+        },
     },
     serialize_point::SerializablePoint,
 };
@@ -25,14 +28,18 @@ pub struct LogicGateAppState {
 impl LogicGateAppState {
     pub fn new() -> Self {
         let input_node = Node::new(
-            SerializablePoint { x: 25.0, y: 400.0 },
+            SerializablePoint {
+                x: DEFAULT_MARGIN,
+                y: 0.5 * CANVAS_HEIGHT,
+            },
             NodeType::Input,
             NODE_RADIUS,
         );
+
         let output_node = Node::new(
             SerializablePoint {
-                x: 1415.0,
-                y: 400.0,
+                x: CANVAS_WIDTH - DEFAULT_MARGIN,
+                y: 0.5 * CANVAS_HEIGHT,
             },
             NodeType::Output,
             NODE_RADIUS,
@@ -125,6 +132,19 @@ impl LogicGateAppState {
                 }
             }
         }
+        for (gate_index, _gate) in self.gates.iter().enumerate() {
+            for (node_index, node) in self.gates[gate_index].nodes.input_nodes.iter().enumerate() {
+                if is_point_near_node(position, node) {
+                    return Some((node_index, NodeType::Input));
+                }
+            }
+            for (node_index, node) in self.gates[gate_index].nodes.output_nodes.iter().enumerate() {
+                if is_point_near_node(position, node) {
+                    return Some((node_index, NodeType::Output));
+                }
+            }
+        }
+
         None
     }
 

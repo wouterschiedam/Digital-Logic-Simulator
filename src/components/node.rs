@@ -1,11 +1,13 @@
 use crate::{helpers::helpers::NODE_RADIUS, serialize_point::SerializablePoint};
 use serde::{Deserialize, Serialize};
 
+use super::connection::Connection;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Node {
     pub position: SerializablePoint,
     pub state: bool,
-    pub connected_to: Option<usize>, // Index of the connected node (if any)
+    pub connected_to: Option<Connection>, // Index of the connected node (if any)
     pub node_type: NodeType,
     pub radius: f32,
 }

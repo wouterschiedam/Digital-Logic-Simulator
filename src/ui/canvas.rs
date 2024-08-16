@@ -2,11 +2,12 @@ use iced::{
     event::Status,
     mouse::{Button, Cursor, Event},
     widget::canvas::{self, Frame, Geometry, Program},
-    Rectangle, Renderer, Theme,
+    Rectangle, Renderer, Size, Theme,
 };
 
 use crate::{
     components::node::NodeType,
+    helpers::helpers::{CANVAS_HEIGHT, CANVAS_WIDTH},
     serialize_point::SerializablePoint,
     state::logic_gate_app_state::LogicGateAppState,
     ui::draw::{
@@ -91,23 +92,6 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
                 }
             }
             canvas::Event::Mouse(Event::CursorMoved { position }) => {
-                // Finnish connetion
-                if let Some(start_position) = self.drag_start {
-                    if let Some((final_position, _node_type)) = self
-                        .state
-                        .check_proximity_to_nodes(position, &start_position)
-                    {
-                        if let Some((target_node_index, _)) =
-                            self.state.find_node_at_position(final_position.into())
-                        {
-                            return (
-                                Status::Captured,
-                                Some(Message::AddConnection(target_node_index)),
-                            );
-                        }
-                    }
-                }
-
                 // Draw current dragging line
                 if let Some(current_path) = &self.current_dragging_line {
                     if let Some(last_position) = current_path.last_point() {
@@ -120,11 +104,10 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
                     }
                     return (Status::Ignored, None);
                 }
-
-                // Means we are dragging from the node so we can set dragging to true
-                if self.state.find_node_at_position(position) == None {
-                    return (Status::Captured, Some(Message::UpdateIsDragging));
-                }
+                // Means we are dragging away from the node so we can set dragging to true
+                // if self.state.find_node_at_position(position) == None {
+                //     return (Status::Captured, Some(Message::UpdateIsDragging));
+                // }
 
                 // Drag gates around canvas
                 if let Some(index) = self.dragging_gate_index {
@@ -138,6 +121,22 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
             }
             canvas::Event::Mouse(Event::ButtonReleased(Button::Left)) => {
                 if let Some(cursor_position) = cursor.position_in(bounds) {
+                    // Finnish connetion
+                    if let Some(start_position) = self.drag_start {
+                        if let Some((final_position, _node_type)) = self
+                            .state
+                            .check_proximity_to_nodes(cursor_position, &start_position)
+                        {
+                            if let Some((target_node_index, node_type)) =
+                                self.state.find_node_at_position(cursor_position.into())
+                            {
+                                return (
+                                    Status::Captured,
+                                    Some(Message::AddConnection(target_node_index, node_type)),
+                                );
+                            }
+                        }
+                    }
                     if let Some((node_index, node_type)) = &self.dragging_node {
                         if *node_type == NodeType::Input
                             && self.state.find_node_at_position(cursor_position) != None
@@ -148,8 +147,8 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
                             );
                         }
                     }
-                    return (Status::Captured, Some(Message::DisabledDragging));
                 }
+                return (Status::Captured, Some(Message::DisabledDragging));
             }
             _ => {}
         }
@@ -165,16 +164,16 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
         bounds: Rectangle,
         _cursor: Cursor,
     ) -> Vec<Geometry> {
-        let mut frame = Frame::new(&renderer, bounds.size());
+        let mut frame = Frame::new(&renderer, Size::new(CANVAS_WIDTH, CANVAS_HEIGHT));
 
-        canvas_frame(&mut frame, bounds);
+        canvas_frame(&mut frame);
 
         canvas_free_nodes(&mut frame, &self.state.nodes);
 
         canvas_gates(&mut frame, &self.state.gates);
 
         // Connections on the go
-        canvas_connection_on_the_fly(&mut frame, &self.current_dragging_line);
+        canvas_connection_on_the_fly(&mut frame, &bounds, &self.current_dragging_line);
 
         canvas_connections(&mut frame, &self.state.connections);
 

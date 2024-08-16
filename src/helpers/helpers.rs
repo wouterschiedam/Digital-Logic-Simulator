@@ -1,14 +1,21 @@
 use iced::{
     widget::canvas::{self, path::Arc, Frame, Path, Stroke},
-    Color,
+    Color, Point,
 };
 
-use crate::components::{gate::LogicGate, node::Node};
+use crate::{
+    components::{gate::LogicGate, node::Node},
+    serialize_point::SerializablePoint,
+    ui::logic_gate_app::Edge,
+};
+
+pub const DEFAULT_MARGIN: f32 = 25.0;
+pub const CANVAS_HEIGHT: f32 = 568.0;
+pub const CANVAS_WIDTH: f32 = 1024.0;
 
 pub const NODE_RADIUS: f32 = 15.0;
 pub const SMALL_NODE_RADIUS: f32 = 5.0;
 pub const LINE_WIDTH: f32 = 3.0;
-pub const DEFAULT_MARGIN: f32 = 25.0;
 pub const MIN_DISTANCE: f32 = 5.0;
 pub const DIRECTION_CHANGE_THRESHOLD: f32 = 600.0;
 
@@ -37,6 +44,33 @@ pub fn is_point_near_node(p: iced::Point, node: &Node) -> bool {
     let distance = (dx * dx + dy * dy).sqrt();
 
     distance <= node.radius
+}
+
+pub fn get_dragging_edge(position: Point, initial_position: SerializablePoint) -> Edge {
+    // Determine drag direction
+    let dragging_edge = if position.x < initial_position.x {
+        if position.y < initial_position.y {
+            Edge::TopLeft
+        } else if position.y > initial_position.y {
+            Edge::BottomLeft
+        } else {
+            Edge::Left
+        }
+    } else if position.x > initial_position.x {
+        if position.y < initial_position.y {
+            Edge::TopRight
+        } else if position.y > initial_position.y {
+            Edge::BottomRight
+        } else {
+            Edge::Right
+        }
+    } else if position.y < initial_position.y {
+        Edge::Top
+    } else {
+        Edge::Bottom
+    };
+
+    dragging_edge
 }
 
 pub fn draw_smooth_corner_curve(

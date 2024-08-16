@@ -13,10 +13,25 @@ use crate::{
         node::{Node, NodeType},
     },
     config::logic_gate_config::LogicGateConfig,
-    helpers::helpers::{MIN_DISTANCE, NODE_RADIUS},
+    helpers::helpers::{
+        get_dragging_edge, CANVAS_HEIGHT, CANVAS_WIDTH, DEFAULT_MARGIN, MIN_DISTANCE, NODE_RADIUS,
+    },
     serialize_point::SerializablePoint,
     state::logic_gate_app_state::LogicGateAppState,
 };
+
+use super::draw::clamp_point;
+
+pub enum Edge {
+    Top,
+    Bottom,
+    Left,
+    Right,
+    BottomLeft,
+    BottomRight,
+    TopLeft,
+    TopRight,
+}
 
 #[derive(Debug, Clone)]
 pub enum Message {
@@ -25,7 +40,7 @@ pub enum Message {
     AddInputNode(Point),
     AddOutputNode(Point, Rectangle),
     AddGate(GateType, usize, usize),
-    AddConnection(usize),
+    AddConnection(usize, NodeType),
     UpdateDraggingGate(usize, SerializablePoint),
     UpdateDraggingNode(Option<(usize, NodeType)>, Option<SerializablePoint>, Point),
     UpdateDraggingGatePosition(Point, usize, SerializablePoint),
@@ -36,6 +51,7 @@ pub enum Message {
     DisabledDragging,
 }
 
+#[derive(Debug, Clone)]
 pub struct LogicGateApp {
     pub state: LogicGateAppState,
     pub dragging_node: Option<(usize, NodeType)>,
@@ -49,7 +65,6 @@ pub struct LogicGateApp {
 pub fn run() -> iced::Result {
     LogicGateApp::run(Settings {
         window: iced::window::Settings {
-            size: Size::new(1440.0, 920.0),
             ..iced::window::Settings::default()
         },
         ..Settings::default()
@@ -84,17 +99,72 @@ impl LogicGateApp {
     fn get_config(&self) -> LogicGateConfig {
         LogicGateConfig::new_default()
     }
-    pub fn update_position(&mut self, position: Point, index: usize, offset: SerializablePoint) {
-        self.state.gates[index].position.x = position.x - offset.x;
-        self.state.gates[index].position.y = position.y - offset.y;
+    pub fn update_position(
+        &mut self,
+        position: Point,
+        index: usize,
+        offset: SerializablePoint,
+        dragging_edge: Edge,
+    ) {
+        // Calculate the new position for the gate and clamp it within the bounds
+        let new_gate_position = Point::new(position.x - offset.x, position.y - offset.y);
+        let bounds = &Rectangle::new(
+            Point::new(DEFAULT_MARGIN, DEFAULT_MARGIN),
+            Size::new(
+                CANVAS_WIDTH - (DEFAULT_MARGIN * 2.0),
+                CANVAS_HEIGHT - DEFAULT_MARGIN,
+            ),
+        );
+
+        // Get the gate's size
+        let gate_width = self.state.gates[index].width;
+        let gate_height = self.state.gates[index].height;
+
+        let (clamped_x, clamped_y) = match dragging_edge {
+            Edge::Top | Edge::TopLeft | Edge::TopRight => (
+                new_gate_position
+                    .x
+                    .clamp(bounds.x, bounds.x + bounds.width - gate_width),
+                new_gate_position
+                    .y
+                    .clamp(bounds.y, bounds.y + bounds.height - gate_height),
+            ),
+            Edge::Bottom | Edge::BottomLeft | Edge::BottomRight => {
+                (
+                    new_gate_position
+                        .x
+                        .clamp(bounds.x, bounds.x + bounds.width - gate_width),
+                    // Ensure the bottom of the gate stays within the canvas
+                    (new_gate_position.y + gate_height).clamp(bounds.y, bounds.y + bounds.height)
+                        - gate_height,
+                )
+            }
+            Edge::Left => (
+                new_gate_position
+                    .x
+                    .clamp(bounds.x, bounds.x + bounds.width - gate_width),
+                new_gate_position
+                    .y
+                    .clamp(bounds.y, bounds.y + bounds.height - gate_height),
+            ),
+            Edge::Right => (
+                new_gate_position
+                    .x
+                    .clamp(bounds.x, bounds.x + bounds.width - gate_width),
+                new_gate_position
+                    .y
+                    .clamp(bounds.y, bounds.y + bounds.height - gate_height),
+            ),
+        };
+        // Update the gate's position
+        self.state.gates[index].position.x = clamped_x;
+        self.state.gates[index].position.y = clamped_y;
 
         // Calculate the number of input and output nodes immutably first
         let num_input_nodes = self.state.gates[index].nodes.input_nodes.len();
         let num_output_nodes = self.state.gates[index].nodes.output_nodes.len();
 
         // Update the positions of the nodes relative to the new gate position
-        let gate_width = self.state.gates[index].width;
-        let gate_height = self.state.gates[index].height;
         let gate_position = self.state.gates[index].position.clone();
 
         // Update input nodes
@@ -108,6 +178,9 @@ impl LogicGateApp {
                 gate_position.y + (i as f32 + 1.0) * gate_height / (num_input_nodes as f32 + 1.0);
             input_node.position.x = gate_position.x;
             input_node.position.y = y_position;
+
+            // Clamp input node position to ensure it's within bounds
+            input_node.position = clamp_point(input_node.position.into(), bounds).into();
         }
 
         // Update output nodes
@@ -121,6 +194,9 @@ impl LogicGateApp {
                 gate_position.y + (i as f32 + 1.0) * gate_height / (num_output_nodes as f32 + 1.0);
             output_node.position.x = gate_position.x + gate_width;
             output_node.position.y = y_position;
+
+            // Clamp output node position to ensure it's within bounds
+            output_node.position = clamp_point(output_node.position.into(), bounds).into();
         }
     }
 }
@@ -170,19 +246,32 @@ impl Application for LogicGateApp {
                     node.add_output_node(new_node);
                 }
             }
-            Message::AddConnection(target_node_index) => {
+            Message::AddConnection(target_node_index, node_type) => {
                 if let Some(path) = &self.current_dragging_line {
                     if let Some((start_index, _)) = self.dragging_node {
-                        self.state.connections.push(Connection::new(
-                            start_index,
-                            target_node_index,
-                            path.points.clone(),
-                        ));
+                        let connection =
+                            Connection::new(start_index, target_node_index, path.points.clone());
+                        self.state.connections.push(connection.clone());
+
+                        match node_type {
+                            NodeType::Input => {
+                                self.state.nodes[0].input_nodes[start_index].connected_to =
+                                    Some(connection)
+                            }
+                            NodeType::Output => {
+                                self.state.nodes[0].output_nodes[start_index].connected_to =
+                                    Some(connection)
+                            }
+                        }
+
+                        // Connected stop dragging nodes
+                        return Command::perform(async { Message::DisabledDragging }, |msg| msg);
                     }
                 }
             }
             Message::UpdateDraggingNode(node, start, position) => {
                 self.dragging_node = node;
+
                 self.current_dragging_line = Some(LinePath::new(SerializablePoint::new(
                     position.x, position.y,
                 )));
@@ -191,11 +280,14 @@ impl Application for LogicGateApp {
             }
             Message::UpdateDraggingGate(gate_index, offset) => {
                 self.dragging_gate_index = Some(gate_index);
-                self.is_dragging = true;
                 self.drag_start = Some(offset);
             }
             Message::UpdateDraggingGatePosition(position, index, offset) => {
-                self.update_position(position, index, offset)
+                if let Some(initial_position) = self.drag_start {
+                    let dragging_edge = get_dragging_edge(position, initial_position);
+
+                    self.update_position(position, index, offset, dragging_edge);
+                }
             }
             Message::DisabledDragging => {
                 self.dragging_node = None;
@@ -204,23 +296,40 @@ impl Application for LogicGateApp {
                 self.drag_start = None;
             }
             Message::UpdateIsDragging => self.is_dragging = true,
-            Message::UpdateNodeState(node, node_type) => match node_type {
-                NodeType::Input => {
-                    self.state.nodes[0].input_nodes[node].state =
-                        !self.state.nodes[0].input_nodes[node].state;
+            Message::UpdateNodeState(node, node_type) => {
+                match node_type {
+                    NodeType::Input => {
+                        if self.state.nodes[0].input_nodes[node].connected_to.is_some() {
+                            self.state.nodes[0].input_nodes[node].state =
+                                !self.state.nodes[0].input_nodes[node].state;
+                        }
+                    }
+                    NodeType::Output => {
+                        if self.state.nodes[0].output_nodes[node]
+                            .connected_to
+                            .is_some()
+                        {
+                            self.state.nodes[0].output_nodes[node].state =
+                                !self.state.nodes[0].output_nodes[node].state;
+                        }
+                    }
                 }
-                NodeType::Output => {
-                    self.state.nodes[0].output_nodes[node].state =
-                        !self.state.nodes[0].output_nodes[node].state;
-                }
-            },
+                self.state.update_connections();
+                return Command::perform(async { Message::DisabledDragging }, |msg| msg);
+            }
             Message::UpdateDraggingLine(position, last_position) => {
                 let distance_x = (last_position.x - position.x).abs();
                 let distance_y = (last_position.y - position.y).abs();
 
-                if distance_x > MIN_DISTANCE || distance_y > MIN_DISTANCE {
-                    self.is_dragging = true;
+                let bounds = &Rectangle::new(
+                    Point::new(DEFAULT_MARGIN, DEFAULT_MARGIN),
+                    Size::new(
+                        CANVAS_WIDTH - (DEFAULT_MARGIN * 2.0),
+                        CANVAS_HEIGHT - DEFAULT_MARGIN,
+                    ),
+                );
 
+                if distance_x > MIN_DISTANCE || distance_y > MIN_DISTANCE {
                     let new_point = if distance_x > distance_y {
                         SerializablePoint {
                             x: position.x,
@@ -233,8 +342,11 @@ impl Application for LogicGateApp {
                         }
                     };
 
+                    // Clamp the new point to ensure it stays within the canvas boundaries
+                    let clamped_new_point = clamp_point(new_point.into(), &bounds);
+
                     if let Some(dragging_line) = self.current_dragging_line.as_mut() {
-                        dragging_line.add_point(new_point);
+                        dragging_line.add_point(clamped_new_point.into());
                     }
                 }
             }
