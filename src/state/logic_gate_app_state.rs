@@ -98,13 +98,6 @@ impl LogicGateAppState {
         }
 
         for (node_index, state) in updates {
-            if let Some(input) = self.nodes[node_index].input_nodes.get_mut(0) {
-                input.state = state;
-            }
-            if let Some(output) = self.nodes[node_index].output_nodes.get_mut(0) {
-                output.state = state;
-            }
-
             for gate in self.gates.iter_mut() {
                 if let Some(gate_input_node) = gate.nodes.input_nodes.get(0) {
                     if gate_input_node.position == self.nodes[node_index].input_nodes[0].position {
@@ -119,28 +112,34 @@ impl LogicGateAppState {
         }
     }
 
-    pub fn find_node_at_position(&self, position: Point) -> Option<(usize, NodeType)> {
-        for node in self.nodes.iter() {
-            for (node_index, input) in node.input_nodes.iter().enumerate() {
+    pub fn find_node_at_position(
+        &self,
+        position: Point,
+    ) -> Option<((usize, NodeType), Option<usize>)> {
+        // Check nodes in the main node list
+        for (node_index, node) in self.nodes.iter().enumerate() {
+            for (input_index, input) in node.input_nodes.iter().enumerate() {
                 if is_point_near_node(position, input) {
-                    return Some((node_index, NodeType::Input));
+                    return Some(((input_index, NodeType::Input), None)); // None indicates not part of any gate
                 }
             }
-            for (node_index, output) in node.output_nodes.iter().enumerate() {
+            for (output_index, output) in node.output_nodes.iter().enumerate() {
                 if is_point_near_node(position, output) {
-                    return Some((node_index, NodeType::Output));
+                    return Some(((output_index, NodeType::Output), None)); // None indicates not part of any gate
                 }
             }
         }
-        for (gate_index, _gate) in self.gates.iter().enumerate() {
-            for (node_index, node) in self.gates[gate_index].nodes.input_nodes.iter().enumerate() {
-                if is_point_near_node(position, node) {
-                    return Some((node_index, NodeType::Input));
+
+        // Check nodes in gates
+        for (gate_index, gate) in self.gates.iter().enumerate() {
+            for (input_index, input) in gate.nodes.input_nodes.iter().enumerate() {
+                if is_point_near_node(position, input) {
+                    return Some(((input_index, NodeType::Input), Some(gate_index)));
                 }
             }
-            for (node_index, node) in self.gates[gate_index].nodes.output_nodes.iter().enumerate() {
-                if is_point_near_node(position, node) {
-                    return Some((node_index, NodeType::Output));
+            for (output_index, output) in gate.nodes.output_nodes.iter().enumerate() {
+                if is_point_near_node(position, output) {
+                    return Some(((output_index, NodeType::Output), Some(gate_index)));
                 }
             }
         }

@@ -42,7 +42,6 @@ pub fn is_point_near_node(p: iced::Point, node: &Node) -> bool {
     let dx = p.x - node.position.x;
     let dy = p.y - node.position.y;
     let distance = (dx * dx + dy * dy).sqrt();
-
     distance <= node.radius
 }
 

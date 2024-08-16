@@ -34,7 +34,7 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
         match event {
             canvas::Event::Mouse(Event::ButtonPressed(Button::Right)) => {
                 if let Some(cursor_position) = cursor.position_in(bounds) {
-                    if let Some((node_index, node_type)) =
+                    if let Some(((node_index, node_type), gate_index_opt)) =
                         self.state.find_node_at_position(cursor_position)
                     {
                         return (
@@ -46,20 +46,46 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
             }
             canvas::Event::Mouse(Event::ButtonPressed(Button::Left)) => {
                 if let Some(cursor_position) = cursor.position_in(bounds) {
-                    if let Some((node_index, node_type)) =
+                    if let Some(((node_index, node_type), gate_index_opt)) =
                         self.state.find_node_at_position(cursor_position)
                     {
                         let mut drag_start = None;
-                        match node_type {
+
+                        let node_position = match node_type {
                             NodeType::Input => {
-                                drag_start =
-                                    Some(self.state.nodes[0].input_nodes[node_index].position);
+                                if let Some(gate_index) = gate_index_opt {
+                                    // Node is part of a gate
+                                    drag_start = Some(
+                                        self.state.gates[gate_index].nodes.input_nodes[node_index]
+                                            .position,
+                                    );
+                                    self.state.gates[gate_index].nodes.input_nodes[node_index]
+                                        .position
+                                } else {
+                                    // Node is not part of a gate
+                                    drag_start =
+                                        Some(self.state.nodes[0].input_nodes[node_index].position);
+                                    self.state.nodes[0].input_nodes[node_index].position
+                                }
                             }
                             NodeType::Output => {
-                                drag_start =
-                                    Some(self.state.nodes[0].output_nodes[node_index].position);
+                                if let Some(gate_index) = gate_index_opt {
+                                    // Node is part of a gate
+                                    drag_start = Some(
+                                        self.state.gates[gate_index].nodes.output_nodes[node_index]
+                                            .position,
+                                    );
+                                    self.state.gates[gate_index].nodes.output_nodes[node_index]
+                                        .position
+                                } else {
+                                    // Node is not part of a gate
+                                    drag_start =
+                                        Some(self.state.nodes[0].output_nodes[node_index].position);
+                                    self.state.nodes[0].output_nodes[node_index].position
+                                }
                             }
-                        }
+                        };
+
                         return (
                             Status::Captured,
                             Some(Message::UpdateDraggingNode(
@@ -123,16 +149,16 @@ impl Program<Message, Theme, Renderer> for LogicGateApp {
                 if let Some(cursor_position) = cursor.position_in(bounds) {
                     // Finnish connetion
                     if let Some(start_position) = self.drag_start {
-                        if let Some((final_position, _node_type)) = self
+                        if let Some((_final_position, _node_type)) = self
                             .state
                             .check_proximity_to_nodes(cursor_position, &start_position)
                         {
-                            if let Some((target_node_index, node_type)) =
+                            if let Some(((node_index, node_type), _gate_index_opt)) =
                                 self.state.find_node_at_position(cursor_position.into())
                             {
                                 return (
                                     Status::Captured,
-                                    Some(Message::AddConnection(target_node_index, node_type)),
+                                    Some(Message::AddConnection(node_index, node_type)),
                                 );
                             }
                         }

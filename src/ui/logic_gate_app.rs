@@ -99,6 +99,7 @@ impl LogicGateApp {
     fn get_config(&self) -> LogicGateConfig {
         LogicGateConfig::new_default()
     }
+
     pub fn update_position(
         &mut self,
         position: Point,
@@ -252,6 +253,7 @@ impl Application for LogicGateApp {
                         let connection =
                             Connection::new(start_index, target_node_index, path.points.clone());
                         self.state.connections.push(connection.clone());
+                        println!("{:?}", connection);
 
                         match node_type {
                             NodeType::Input => {
